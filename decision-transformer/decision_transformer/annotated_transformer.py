@@ -13,9 +13,6 @@ from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
 from torchtext.vocab import build_vocab_from_iterator
 import torchtext.datasets as datasets
-import spacy
-import GPUtil
-import warnings
 from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -27,7 +24,7 @@ def attention(query, key, value, mask=None, dropout=None):
     scores = torch.matmul(query, key.transpose(-2, -1) ) / math.sqrt(value.size(0))
     if mask is not None: 
         scores[mask == 0] = -1e9
-    logits = scores.softmax(dim=-1)
+    logits = dropout(scores.softmax(dim=-1))
     return torch.matmul(logits, value), logits
 
 def clones(module, N):
@@ -64,6 +61,16 @@ class MultiheadedAttention(nn.Module):
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
+    def forward(self, query: torch.Tensor, key: torch.Tensor, value, mask=None):
+        if mask is not None:
+            mask = mask.unsqueeze(1)
+
+        n_batches = query.size(0)
+        # generate query, key, value per attn layer
+        query, key, value = [lin(x).view(n_batches, -1, self.h, self.d_k) for lin, x in zip(self.linears, (query, key, value))]
+        attn_outputs, attn_probs = attention(query, key, value, mask, dropout=self.dropout)
+        attn_outputs = attn_outputs.transpose(1, 2).contiguous().view(n_batches, -1, self.d_k)
+        return self.linears[-1](attn_outputs)
 
 
 
@@ -87,6 +94,7 @@ class Generator:
 
 class LayerNorm(nn.Module):
     # Facilitate LayerNorm within the transformer model
+    # Paper related to Layer Normalization here: https://arxiv.org/pdf/1607.06450
     def __init__(self, features, eps=1e-6):
         self.a_2 = nn.Parameter(torch.ones(features))
         self.b_2 = nn.Parameter(torch.zeros(features)) # using nn.Parameter makes this tensor trainable in the model (i.e. gradients update when performing backprop)
@@ -107,7 +115,7 @@ class SublayerConnection(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, size, self_attn: nn.Module, feed_forward: nn.Module, dropout_prob):
+    def __init__(self, self_attn: nn.Module, feed_forward: nn.Module, dropout_prob):
         super(EncoderLayer, self).__init__()
         self.self_attn = self_attn
         self.dropout = nn.Dropout(dropout_prob)

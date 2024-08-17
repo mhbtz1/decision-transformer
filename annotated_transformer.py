@@ -2,6 +2,7 @@ import os
 from os.path import exists
 import torch
 import torch.nn as nn
+from nn import Embedding
 from torch.nn.functional import log_softmax, pad
 import math
 import copy
@@ -116,6 +117,32 @@ class DecoderLayer(nn.Module):
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
         x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
         return self.sublayer[2](x, self.feed_forward)
+
+
+class PositionalEmbedding(nn.Module):
+    def __init__(self, ctx_size, d_embed, dropout_prob=0.25):
+        super(PositionalEmbedding, self).__init__()
+        self.position_embed = torch.zeroes(ctx_size, d_embed)
+        self.pos = torch.arange(0, d_embed).unsqueezes(1)
+        self.dropout = nn.Dropout(dropout_prob)
+        div_term = torch.exp( 2 * torch.arange(0, ctx_size) * -math.log(10000))
+
+        self.position_embed[ : , 0::2] = torch.sin(self.pos *  div_term)
+        self.position_embed[ :,  1::2] = torch.cos(self.pos * div_term)
+
+    def forward(self, x): # x is a batch / minibatch tensor of shape (n_batch, ctx_size, d_embed)
+        return x + self.position_embed[:, 0::2] + self.position_embed[:, 1::2]
+
+
+
+class Embeddings(nn.Module):
+    def __init__(self, d_model, vocab):
+        super(Embeddings, self).__init__()
+        self.lut = nn.Embedding(vocab, d_model)
+        self.d_model = d_model
+
+    def forward(self, x):
+        return self.lut(x) * math.sqrt(self.d_model)
 
 
 class Decoder(nn.Module):

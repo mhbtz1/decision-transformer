@@ -8,7 +8,6 @@ import copy
 import time
 from torch.optim.lr_scheduler import LambdaLR
 import pandas as pd
-import altair as alt
 from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
 from torchtext.vocab import build_vocab_from_iterator
@@ -21,8 +20,26 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+# functions relevant for the implementation of the transformer are at the top here
+
+def attention(query, key, value, mask=None, dropout=None):
+    scores = torch.matmul(query, key.transpose(-2, -1) ) / math.sqrt(value.size(0))
+    if mask is not None: 
+        scores[mask == 0] = -1e9
+    logits = scores.softmax(dim=-1)
+    return torch.matmul(logits, value), logits
+
 def clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+
+def subsequent_mask(size):
+    attn_shape = (1, size, size)
+    subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1).type(
+        torch.uint8
+    )
+    return subsequent_mask == 0
+
+# utility classes
 
 class DummyOptimizer(torch.optim.Optimizer):
     def __init__(self):
@@ -44,7 +61,7 @@ class LayerNorm(nn.Module):
     # Facilitate LayerNorm within the transformer model
     def __init__(self, features, eps=1e-6):
         self.a_2 = nn.Parameter(torch.ones(features))
-        self.b_2 = nn.Parameter(torch.zeros(features))
+        self.b_2 = nn.Parameter(torch.zeros(features)) # using nn.Parameter makes this tensor trainable in the model (i.e. gradients update when performing backprop)
         self.eps = eps
     def forward(self, x):
         mean = x.mean(-1, keepdims=True)
@@ -102,8 +119,14 @@ class DecoderLayer(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self):
-        pass
+    def __init__(self, layer, N):
+        super(Decoder, self).__init__()
+        self.layers = clones(layer, N)
+        self.N = N
+    def forward(self, x, memory, src_mask, target_mask):
+        for layer in self.layers:
+            x = layer(x, memory, src_mask, target_mask)
+        return x
 
 
 class EncoderDecoder(nn.Module):

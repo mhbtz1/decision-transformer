@@ -2,7 +2,7 @@ import os
 from os.path import exists
 import torch
 import torch.nn as nn
-from nn import Embedding
+from torch.nn import Embedding
 from torch.nn.functional import log_softmax, pad
 import math
 import copy
@@ -110,12 +110,12 @@ class SublayerConnection(nn.Module):
         super(SublayerConnection, self).__init__()
         self.norm = LayerNorm(size)
         self.dropout = nn.Dropout(dropout_prob)
-    def forward(self, x, sublayer):
+    def forward(self, x, sublayer: nn.Module):
         return x + self.dropout(sublayer(self.norm(x)))
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, self_attn: nn.Module, feed_forward: nn.Module, dropout_prob):
+    def __init__(self, size, self_attn: nn.Module, feed_forward: nn.Module, dropout_prob):
         super(EncoderLayer, self).__init__()
         self.self_attn = self_attn
         self.dropout = nn.Dropout(dropout_prob)
@@ -147,7 +147,6 @@ class DecoderLayer(nn.Module):
         self.sublayer = clones(SublayerConnection(size, dropout), 3)
 
     def forward(self, x, memory, src_mask, tgt_mask):
-        "Follow Figure 1 (right) for connections."
         m = memory
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
         x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
@@ -157,16 +156,18 @@ class DecoderLayer(nn.Module):
 class PositionalEmbedding(nn.Module):
     def __init__(self, ctx_size, d_embed, dropout_prob=0.25):
         super(PositionalEmbedding, self).__init__()
-        self.position_embed = torch.zeros_like(ctx_size, d_embed)
-        self.pos = torch.arange(0, d_embed).unsqueeze(1)
+        self.position_embed = torch.zeros(ctx_size, d_embed)
+        pos = torch.arange(0, d_embed).unsqueeze(1)
+        pe = torch.zeros(ctx_size, d_embed)
         self.dropout = nn.Dropout(dropout_prob)
-        div_term = torch.exp( 2 * torch.arange(0, ctx_size) * -math.log(10000))
+        div_term = torch.exp( 2 * torch.arange(0, ctx_size) * -math.log(10000) / d_embed)
 
-        self.position_embed[ : , 0::2] = torch.sin(self.pos *  div_term)
-        self.position_embed[ :,  1::2] = torch.cos(self.pos * div_term)
+        pe[ : , 0::2] = torch.sin(pos *  div_term)
+        pe[ :,  1::2] = torch.cos(pos * div_term)
+        self.pe = pe
 
     def forward(self, x): # x is a batch / minibatch tensor of shape (n_batch, ctx_size, d_embed)
-        x = x + (self.position_embed[:, 0::2] + self.position_embed[:, 1::2]).requires_grad(False) # we don'[t ]
+        x = x + (self.pe[:, 0::2] + self.pe[:, 1::2]).requires_grad(False) # we don'[t ]
         return self.dropout(x)
 
 
@@ -191,6 +192,7 @@ class Decoder(nn.Module):
         return x
 
 
+# standard interface for an encoder-decoder model
 class EncoderDecoder(nn.Module):
     def __init__(self, encoder, decoder, src_embed, target_embed, generator):
         self.encoder = encoder

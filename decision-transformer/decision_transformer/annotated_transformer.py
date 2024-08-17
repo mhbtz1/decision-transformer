@@ -42,6 +42,31 @@ def subsequent_mask(size):
 
 # utility classes
 
+class PositionWiseFFN(nn.Module):
+    def __init__(self, d_model, output_size, dropout_prob):
+        super(PositionWiseFFN, self).__init__
+        self.w_1 = nn.Linear(d_model, output_size)
+        self.w_2 = nn.Linear(output_size, d_model)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout_prob)
+    def forward(self, x):
+        return self.w_2(self.dropout(self.relu(self.w_1(x))))
+
+
+class MultiheadedAttention(nn.Module):
+    def __init__(self, h, d_model, dropout=0.25):
+        super(MultiheadedAttention, self).__init__()
+        assert d_model % h == 0
+        # We assume d_v always equals d_k
+        self.d_k = d_model // h
+        self.h = h
+        self.linears = clones(nn.Linear(d_model, d_model), 4)
+        self.attn = None
+        self.dropout = nn.Dropout(p=dropout)
+
+
+
+
 class DummyOptimizer(torch.optim.Optimizer):
     def __init__(self):
         pass
@@ -52,6 +77,8 @@ class DummyOptimizer(torch.optim.Optimizer):
     def zero_grad(self, set_to_zero=False):
         pass
 
+# final layer of the decoder transformer
+# takes the output from several decoder layers and outputs
 class Generator:
     def __init__(self, d_model, vocab_size):
         self.proj = nn.Linear(d_model, vocab_size)
@@ -122,8 +149,8 @@ class DecoderLayer(nn.Module):
 class PositionalEmbedding(nn.Module):
     def __init__(self, ctx_size, d_embed, dropout_prob=0.25):
         super(PositionalEmbedding, self).__init__()
-        self.position_embed = torch.zeroes(ctx_size, d_embed)
-        self.pos = torch.arange(0, d_embed).unsqueezes(1)
+        self.position_embed = torch.zeros_like(ctx_size, d_embed)
+        self.pos = torch.arange(0, d_embed).unsqueeze(1)
         self.dropout = nn.Dropout(dropout_prob)
         div_term = torch.exp( 2 * torch.arange(0, ctx_size) * -math.log(10000))
 
@@ -131,8 +158,8 @@ class PositionalEmbedding(nn.Module):
         self.position_embed[ :,  1::2] = torch.cos(self.pos * div_term)
 
     def forward(self, x): # x is a batch / minibatch tensor of shape (n_batch, ctx_size, d_embed)
-        return x + self.position_embed[:, 0::2] + self.position_embed[:, 1::2]
-
+        x = x + (self.position_embed[:, 0::2] + self.position_embed[:, 1::2]).requires_grad(False) # we don'[t ]
+        return self.dropout(x)
 
 
 class Embeddings(nn.Module):

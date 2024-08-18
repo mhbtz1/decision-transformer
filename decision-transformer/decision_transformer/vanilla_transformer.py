@@ -9,10 +9,7 @@ import copy
 import time
 from torch.optim.lr_scheduler import LambdaLR
 import pandas as pd
-from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
-from torchtext.vocab import build_vocab_from_iterator
-import torchtext.datasets as datasets
 from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 import torch.multiprocessing as mp

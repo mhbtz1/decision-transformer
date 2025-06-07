@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "decision-transformer"
+version = "0.1.0"
+description = ""
+authors = ["Matthew Habtezgi <mhbtz@mit.edu>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+tokenizers="^0.20.0"
+datasets="^2.21.0"
+transformers="^4.44.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
